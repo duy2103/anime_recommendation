@@ -5,8 +5,10 @@ A hybrid anime recommender system using MyAnimeList data, featuring both content
 ## Features
 - **KNN-based Recommendations:** Find similar anime using a K-Nearest Neighbors model trained on engineered features.
 - **Content-based Filtering:** Personalized recommendations based on genres, types, and user preferences.
+- **Unified Onboarding:** Both new and returning users can specify genres, types, eras (multi-select), themes, tone, age rating, language, minimum episodes, and minimum minutes per episode for recommendations.
 - **Streamlit UI:** Interactive web app for onboarding, recommendations, and feedback.
 - **Feedback Loop:** Tinder-style swipe interface for collecting user feedback.
+- **Automated Data Updates:** Data is automatically refreshed every 2 weeks via a cron job, and changes are auto-committed and pushed to GitHub.
 
 ## Quickstart
 
@@ -35,6 +37,26 @@ streamlit run app.py
 ```
 
 The app will open in your browser at `http://localhost:8501`.
+
+### 5. Automated Data Updates (Cron Job)
+
+A cron job is set up to run every 2 weeks, automatically updating the anime data and pushing changes to GitHub. The script used is:
+
+```zsh
+./update_anime_data.sh
+```
+
+This script:
+- Extracts the latest anime data from MyAnimeList (via Jikan API)
+- Runs feature engineering
+- Commits and pushes any data changes to your GitHub repository
+
+You can find and edit the cron job with:
+```zsh
+crontab -e
+```
+
+Logs are saved to `data_update.log` in the project directory.
 
 ## Project Structure
 - `app.py` — Main Streamlit app

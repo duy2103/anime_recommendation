@@ -30,43 +30,43 @@ recommender = AnimeRecommender()
 
 user_type = st.radio("Are you new to anime or a returning watcher?", ["New to anime", "Returning user"])
 
+titles = pd.read_csv('data/mal_anime_clean.csv')['title'].tolist()
+
 if user_type == "New to anime":
     st.header("Let's get to know your taste!")
     genres = GENRES
-    types = TYPES
-    # Only use factors that match the ML features
+    types = ["Any"] + TYPES
+    eras = ["Any", "1980s", "1990s", "2000s", "2010s", "2020s"]
     selected_genres = st.multiselect("Pick your favorite genres:", genres)
-    selected_types = st.multiselect("Preferred anime type(s):", types)
-    episodes = st.number_input("Preferred number of episodes (0 for any):", min_value=0, max_value=1000, value=0)
-    year = st.number_input("Preferred year (0 for any):", min_value=0, max_value=2025, value=0)
-    duration_min = st.number_input("Preferred duration per episode (minutes, 0 for any):", min_value=0, max_value=200, value=0)
-    if st.button("Get ML Recommendations!"):
+    selected_types = st.multiselect("Preferred anime type(s):", types, default=["Any"])
+    selected_eras = st.multiselect("Preferred era(s):", eras, default=["Any"])
+    min_episodes = st.number_input("Minimum number of episodes (0 for any):", min_value=0, max_value=1000, value=0)
+    min_duration = st.number_input("Minimum minutes per episode (0 for any):", min_value=0, max_value=200, value=0)
+    st.markdown("**Personalized ML Recommendations:** Uses your selected genres, types, era, and preferences to find similar anime using a machine learning model.")
+    if st.button("Get Personalized ML Recommendations"):
         with st.spinner('Finding recommendations...'):
-            # Build user vector
             features_df = pd.read_csv('data/mal_anime_features.csv')
-            # Get feature columns as in model training
             ignore_cols = ['mal_id', 'score']
             feature_cols = [c for c in features_df.columns if c not in ignore_cols and features_df[c].dtype in [np.int64, np.float64, np.int32, np.float32]]
-            # Build user_vec as a dict for all feature_cols
             user_vec_dict = {col: 0 for col in feature_cols}
-            # Fill genre columns
             for col in feature_cols:
                 if col.startswith('genre_'):
                     genre = col.replace('genre_', '')
                     user_vec_dict[col] = 1 if genre in selected_genres else 0
-            # Fill type columns
+            # Only set type/era if not 'Any'
             for col in feature_cols:
                 if col.startswith('type_'):
                     t = col.replace('type_', '')
-                    user_vec_dict[col] = 1 if t in selected_types else 0
-            # Fill numeric fields
+                    user_vec_dict[col] = 1 if t in selected_types and t != "Any" else 0
             if 'episodes' in feature_cols:
-                user_vec_dict['episodes'] = episodes
-            if 'year' in feature_cols:
-                user_vec_dict['year'] = year
+                user_vec_dict['episodes'] = min_episodes
             if 'duration_min' in feature_cols:
-                user_vec_dict['duration_min'] = duration_min
-            # Build DataFrame
+                user_vec_dict['duration_min'] = min_duration
+            # Map eras to years (use average if multiple, or 0 if 'Any')
+            era_map = {"1980s": 1985, "1990s": 1995, "2000s": 2005, "2010s": 2015, "2020s": 2022}
+            if 'year' in feature_cols:
+                valid_eras = [era_map[e] for e in selected_eras if e != "Any" and e in era_map]
+                user_vec_dict['year'] = int(np.mean(valid_eras)) if valid_eras else 0
             user_vec_df = pd.DataFrame([user_vec_dict])
             scaler = joblib.load('data/knn_scaler.joblib')
             knn = joblib.load('data/knn_model.joblib')
@@ -90,22 +90,23 @@ elif user_type == "Returning user":
     mode = st.radio("Choose a mode:", ["Based on anime I've watched", "Explore new options"])
     liked_list = []
     if mode == "Based on anime I've watched":
-        liked = st.text_area("Enter anime titles you've enjoyed (comma separated):")
-        liked_list = [x.strip() for x in liked.split(',') if x.strip()]
-        if st.button("Get ML Recommendations!") and liked_list:
+        st.markdown("**Personalized ML Recommendations:** Select anime you've watched to get recommendations based on a machine learning model trained on anime features.")
+        liked_list = st.multiselect("Select anime you've watched:", titles)
+        if st.button("Get Personalized ML Recommendations") and liked_list:
             with st.spinner('Finding recommendations...'):
                 features_df = pd.read_csv('data/mal_anime_features.csv')
                 clean_df = pd.read_csv('data/mal_anime_clean.csv').set_index('mal_id')
                 scaler = joblib.load('data/knn_scaler.joblib')
                 knn = joblib.load('data/knn_model.joblib')
-                # Get feature vectors for liked anime
+                ignore_cols = ['mal_id', 'score']
+                feature_cols = [c for c in features_df.columns if c not in ignore_cols and features_df[c].dtype in [np.int64, np.float64, np.int32, np.float32]]
                 liked_ids = []
                 for title in liked_list:
                     try:
                         liked_ids.append(int(clean_df[clean_df['title'] == title].index[0]))
                     except:
                         pass
-                liked_vecs = features_df[features_df['mal_id'].isin(liked_ids)].drop(columns=['mal_id','score']).values
+                liked_vecs = features_df[features_df['mal_id'].isin(liked_ids)][feature_cols].values
                 if len(liked_vecs) == 0:
                     st.warning("No matching anime found in dataset.")
                 else:
@@ -124,27 +125,25 @@ elif user_type == "Returning user":
                             st.image(rec['image_url'], width=200)
                         st.markdown('---')
     elif mode == "Explore new options":
+        st.markdown("**Content-Based Recommendations:** Explore new anime using your selected genres, types, era, themes, tone, age rating, and language preferences. This method uses content-based filtering.")
         genres = GENRES
-        types = TYPES
-        eras = ["1980s", "1990s", "2000s", "2010s", "2020s"]
-        themes = THEMES
-        tones = TONES
-        age_ratings = AGE_RATINGS
-        lang_pref = LANG_PREF
+        types = ["Any"] + TYPES
+        eras = ["Any", "1980s", "1990s", "2000s", "2010s", "2020s"]
+        themes = ["Any"] + THEMES
+        tones = ["Any"] + TONES
+        age_ratings = ["Any"] + AGE_RATINGS
+        lang_pref = ["Any"] + LANG_PREF
         selected_genres = st.multiselect("Pick your favorite genres:", genres)
-        selected_types = st.multiselect("Preferred anime type(s):", types)
-        selected_era = st.selectbox("Preferred release era:", eras)
-        selected_themes = st.multiselect("Preferred themes:", themes)
-        selected_tone = st.selectbox("Story tone:", tones)
-        selected_age = st.selectbox("Age rating:", age_ratings)
-        selected_lang = st.selectbox("Language preference:", lang_pref)
-    if st.button("Get Recommendations!"):
-        if mode == "Based on anime I've watched" and liked_list:
-            recs = recommender.recommend_knn(liked_list)
-        else:
-            recs = recommender.recommend_by_onboarding(selected_genres, selected_types, selected_era, selected_themes, selected_tone, selected_age, selected_lang)
-        st.session_state['recommendations'] = recs
-        st.session_state['rec_index'] = 0
+        selected_types = st.multiselect("Preferred anime type(s):", types, default=["Any"])
+        selected_eras = st.multiselect("Preferred release era(s):", eras, default=["Any"])
+        selected_themes = st.multiselect("Preferred themes:", themes, default=["Any"])
+        selected_tone = st.selectbox("Story tone:", tones, index=0)
+        selected_age = st.selectbox("Age rating:", age_ratings, index=0)
+        selected_lang = st.selectbox("Language preference:", lang_pref, index=0)
+        if st.button("Get Content-Based Recommendations"):
+            recs = recommender.recommend_by_onboarding(selected_genres, selected_types, selected_eras, selected_themes, selected_tone, selected_age, selected_lang)
+            st.session_state['recommendations'] = recs
+            st.session_state['rec_index'] = 0
 
 # Tinder-style swipe interface
 if 'recommendations' in st.session_state and st.session_state['recommendations']:

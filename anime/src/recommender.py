@@ -85,7 +85,7 @@ class AnimeRecommender:
         candidate_df = candidate_df.sort_values('score', ascending=False)
         return candidate_df['title'].head(top_n).tolist()
 
-    def recommend_by_onboarding(self, genres, types, era, themes, tone, age, lang, top_n=10):
+    def recommend_by_onboarding(self, genres, types, eras, themes, tone, age, lang, top_n=10):
         # Build a search query from onboarding answers
         queries = list(genres) + list(types) + list(themes)
         # Era to year range
@@ -96,7 +96,15 @@ class AnimeRecommender:
             "2010s": (2010, 2019),
             "2020s": (2020, 2025)
         }
-        year_min, year_max = era_map.get(era, (1980, 2025))
+        # Support multiple eras
+        valid_eras = [e for e in eras if e != "Any" and e in era_map]
+        if valid_eras:
+            year_mins = [era_map[e][0] for e in valid_eras]
+            year_maxs = [era_map[e][1] for e in valid_eras]
+            year_min = min(year_mins)
+            year_max = max(year_maxs)
+        else:
+            year_min, year_max = 1980, 2025
         # Search for candidates
         candidates = []
         for q in queries:
@@ -121,29 +129,27 @@ class AnimeRecommender:
         self.feature_matrix = np.array(features)
         self.anime_df = pd.DataFrame(filtered)
         # Build user profile vector from answers
-        # For MVP: genres, types, themes as multi-hot; era as normalized year; tone/age/lang ignored for now
         all_genres = [
             "Action", "Adventure", "Comedy", "Drama", "Fantasy", "Horror", "Mystery", "Romance", "Sci-Fi", "Slice of Life", "Sports", "Supernatural"
         ]
         genre_vec = [1 if g in genres else 0 for g in all_genres]
         all_types = ["TV", "Movie", "OVA", "ONA", "Special", "Music"]
         type_vec = [1 if t in types else 0 for t in all_types]
-        # Era as normalized year (middle of range)
-        year_norm = ((year_min + year_max) / 2 - 1980) / (2025 - 1980)
-        # Score: neutral (0.5)
+        # Era as normalized year (middle of all selected ranges)
+        if valid_eras:
+            year_norm = ((sum([era_map[e][0] + era_map[e][1] for e in valid_eras]) / (2 * len(valid_eras))) - 1980) / (2025 - 1980)
+        else:
+            year_norm = 0
         score_norm = 0.5
-        # Source: all zeros for now
         all_sources = ["Manga", "Original", "Light novel", "Visual novel", "Game", "Other"]
         source_vec = [0] * len(all_sources)
         user_vec = np.array(genre_vec + [score_norm, year_norm] + type_vec + source_vec).reshape(1, -1)
-        # KNN
         if len(self.feature_matrix) == 0:
             return []
         nn_model = NearestNeighbors(n_neighbors=top_n, metric='euclidean')
         nn_model.fit(self.feature_matrix)
         dists, indices = nn_model.kneighbors(user_vec, n_neighbors=top_n)
         recs = [filtered[i] for i in indices[0]]
-        # Add image_url for display (from Jikan API)
         for r in recs:
             if 'images' in r and 'jpg' in r['images']:
                 r['image_url'] = r['images']['jpg'].get('large_image_url', '') or r['images']['jpg'].get('image_url', '')
